@@ -37,8 +37,8 @@ h1{font-size:2.4rem;margin:0 0 4px;color:var(--gold);}
 .sq.selected{box-shadow:inset 0 0 0 3px var(--gold);}
 .sq .dot{position:absolute;width:26%;height:26%;border-radius:50%;background:var(--move-dot);opacity:.8;}
 .sq .ring{position:absolute;width:80%;height:80%;border-radius:50%;border:4px solid var(--capture-ring);}
-.piece{transition:transform .15s;}
-.piece.coin{display:inline-flex;align-items:center;justify-content:center;width:78%;height:78%;border-radius:50%;
+.piece{transition:transform .15s;-webkit-text-stroke:1px #000;}
+.piece.coin{display:inline-flex;align-items:center;justify-content:center;width:78%;height:78%;border-radius:50%;border:2px solid #1a1a1a;
   background:radial-gradient(circle at 35% 30%, #fff6de, var(--coin-color,#c9a24b) 70%);
   box-shadow:0 2px 6px rgba(0,0,0,.5), inset 0 0 4px rgba(255,255,255,.6);}
 .coin.bronze{--coin-color:#b06a34;} .coin.silver{--coin-color:#b7bfc9;} .coin.gold{--coin-color:#d9ae3f;}
@@ -128,13 +128,23 @@ h1{font-size:2.4rem;margin:0 0 4px;color:var(--gold);}
 <div class="screen" id="screen-difficulty">
   <button class="top-link" onclick="goTo('play-setup')">← Back</button>
   <h1 style="font-size:1.6rem;">Choose your difficulty</h1>
-  <div class="btn-row">
-    <button class="btn" onclick="startComputerGame('beginner')">Beginner</button>
-    <button class="btn" onclick="startComputerGame('easy')">Easy 🥉</button>
-    <button class="btn" onclick="startComputerGame('medium')">Medium 🥈</button>
-    <button class="btn" onclick="startComputerGame('hard')">Hard 🥇</button>
+ <div class="btn-row">
+    <button class="btn" onclick="chosenDifficulty='beginner';goTo('color-choice')">Beginner</button>
+    <button class="btn" onclick="chosenDifficulty='easy';goTo('color-choice')">Easy 🥉</button>
+    <button class="btn" onclick="chosenDifficulty='medium';goTo('color-choice')">Medium 🥈</button>
+    <button class="btn" onclick="chosenDifficulty='hard';goTo('color-choice')">Hard 🥇</button>
   </div>
   <p class="subtitle" style="max-width:360px;margin-top:16px;">Easy, Medium and Hard wins unlock rewards — check the Rewards screen!</p>
+</div>
+
+<!-- COLOR CHOICE (new) -->
+<div class="screen" id="screen-color-choice">
+  <button class="top-link" onclick="goTo('difficulty')">← Back</button>
+  <h1 style="font-size:1.6rem;">Choose your color</h1>
+  <div class="btn-row">
+    <button class="btn" onclick="startComputerGame(chosenDifficulty,'w')">Play as White</button>
+    <button class="btn" onclick="startComputerGame(chosenDifficulty,'b')">Play as Black</button>
+  </div>
 </div>
 
 <!-- GAME -->
@@ -384,26 +394,30 @@ function nextTutorialPiece(){
 }
 
 /* ================= PLAY MODE ================= */
+let humanColor = 'w';
+let chosenDifficulty = null;
 let game, gameMode, difficulty, gameSelected=null, gameMoves=[], flipped=false;
 let capturedWhite=[], capturedBlack=[];
 
 function startFriendGame(){ setupGame('friend', null); }
-function startComputerGame(diff){ setupGame('computer', diff); }
-function setupGame(mode, diff){
+function startComputerGame(diff, color){ setupGame('computer', diff, color); }
+function setupGame(mode, diff, color){
   gameMode=mode; difficulty=diff; game=new Chess();
-  gameSelected=null; gameMoves=[]; flipped=false;
+  humanColor = color || 'w';
+  gameSelected=null; gameMoves=[]; flipped=(humanColor==='b');
   capturedWhite=[]; capturedBlack=[];
   document.getElementById('history').innerHTML='';
   updateCaptured();
   goTo('game');
   drawGameBoard();
   updateTurnBadge();
+  if(mode==='computer' && humanColor==='b'){ setTimeout(aiMove, 400); }
 }
 function drawGameBoard(){
   renderBoard(document.getElementById('board-game'), game, flipped, onGameSquareClick, gameSelected, gameMoves);
 }
 function onGameSquareClick(square){
-  if(gameMode==='computer' && game.turn()==='b') return; // wait for AI
+  if(gameMode==='computer' && game.turn()!==humanColor) return; // wait for AI
   const piece = game.get(square);
   if(gameSelected && gameMoves.some(m=>m.to===square)){
     makeMove(gameSelected, square);
@@ -428,9 +442,9 @@ function makeMove(from,to){
   updateTurnBadge();
   updateCaptured();
   checkGameEnd();
-  if(!game.game_over() && gameMode==='computer' && game.turn()==='b'){
+  if(!game.game_over() && gameMode==='computer' && game.turn()!==humanColor){
     setTimeout(aiMove, 400);
-  }
+}
 }
 function trackCapture(mv){
   const key = (mv.color==='w'?'b':'w') + mv.captured;
@@ -474,7 +488,7 @@ function checkGameEnd(){
 }
 function handleRewards(winnerColor){
   if(gameMode!=='computer') return;
-  const humanWon = winnerColor === 'White'; // human always plays White vs computer
+  const humanWon = (humanColor==='w' && winnerColor==='White') || (humanColor==='b' && winnerColor==='Black');
   if(!humanWon) return;
   if(difficulty==='easy') unlockCoin('bronze');
   if(difficulty==='medium'){ unlockCoin('silver'); unlockNextTheme(); }
@@ -500,7 +514,7 @@ function rebuildHistory(){
   });
 }
 function confirmRestart(){
-  if(confirm('Restart the game? Current progress will be lost.')) setupGame(gameMode, difficulty);
+  if(confirm('Restart the game? Current progress will be lost.')) setupGame(gameMode, difficulty, humanColor);
 }
 function confirmBackToMenu(){
   if(confirm('Leave this game and return to the menu?')) goTo('landing');
@@ -548,14 +562,18 @@ function aiMove(){
   if(depth===0){
     chosen = moves[Math.floor(Math.random()*moves.length)];
   } else {
-    let bestVal=Infinity, bestMove=moves[0];
-    for(const m of moves){
-      game.move(m);
-      const val = minimax(game, depth-1, -Infinity, Infinity, true);
-      game.undo();
-      if(val < bestVal){ bestVal=val; bestMove=m; }
-    }
-    chosen = bestMove;
+   const aiIsWhite = (game.turn() === 'w');
+let bestVal = aiIsWhite ? -Infinity : Infinity;
+let bestMove = moves[0];
+for(const m of moves){
+  game.move(m);
+  const val = minimax(game, depth-1, -Infinity, Infinity, !aiIsWhite);
+  game.undo();
+  if((aiIsWhite && val > bestVal) || (!aiIsWhite && val < bestVal)){
+    bestVal = val; bestMove = m;
+  }
+}
+chosen = bestMove;
   }
   const mv = game.move(chosen);
   if(mv.captured) trackCapture(mv);
@@ -572,7 +590,7 @@ function openModal(title,text){
 }
 function modalPlayAgain(){
   document.getElementById('modal-overlay').classList.remove('active');
-  setupGame(gameMode, difficulty);
+  setupGame(gameMode, difficulty, humanColor);
 }
 function modalBackToMenu(){
   document.getElementById('modal-overlay').classList.remove('active');
